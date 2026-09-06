@@ -35,13 +35,16 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicI64;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 use tracing::warn;
 
 mod backfill;
 mod external_agent_config_imports;
 mod goals;
+mod log_maintenance;
 mod logs;
 mod memories;
 mod projects;
@@ -95,6 +98,7 @@ pub struct StateRuntime {
     thread_queue: SqliteQueueStore,
     thread_updated_at_millis: Arc<AtomicI64>,
     thread_recency_at_millis: Arc<AtomicI64>,
+    logs_maintenance_stop: Arc<AtomicBool>,
 }
 
 impl StateRuntime {
@@ -258,6 +262,7 @@ impl StateRuntime {
             default_provider,
             thread_updated_at_millis: Arc::new(AtomicI64::new(thread_updated_at_millis)),
             thread_recency_at_millis: Arc::new(AtomicI64::new(thread_recency_at_millis)),
+            logs_maintenance_stop: Arc::new(AtomicBool::new(false)),
         });
         if let Err(err) = runtime.run_logs_startup_maintenance().await {
             warn!(
@@ -265,6 +270,7 @@ impl StateRuntime {
                 logs_path.display(),
             );
         }
+        log_maintenance::spawn(&runtime, Arc::clone(&runtime.logs_maintenance_stop));
         Ok(runtime)
     }
 
@@ -288,6 +294,7 @@ impl StateRuntime {
 
     /// Close all SQLite pools and wait for outstanding pool workers to exit.
     pub async fn close(&self) {
+        self.logs_maintenance_stop.store(true, Ordering::Release);
         self.thread_queue.close().await;
         self.memories.close().await;
         self.thread_goals.close().await;

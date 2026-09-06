@@ -1,7 +1,5 @@
 use super::*;
 
-const LOG_RETENTION_DAYS: i64 = 10;
-
 impl StateRuntime {
     pub async fn insert_log(&self, entry: &LogEntry) -> anyhow::Result<()> {
         self.insert_logs(std::slice::from_ref(entry)).await
@@ -289,19 +287,27 @@ WHERE id IN (
     }
 
     pub(crate) async fn run_logs_startup_maintenance(&self) -> anyhow::Result<()> {
-        let Some(cutoff) =
-            Utc::now().checked_sub_signed(chrono::Duration::days(LOG_RETENTION_DAYS))
+        self.run_logs_maintenance(super::log_maintenance::configured_retention_days())
+            .await
+            .map(|_| ())
+    }
+
+    pub(super) async fn run_logs_maintenance(&self, retention_days: i64) -> anyhow::Result<u64> {
+        let Some(cutoff) = Utc::now().checked_sub_signed(chrono::Duration::days(retention_days))
         else {
-            return Ok(());
+            return Ok(0);
         };
-        self.delete_logs_before(cutoff.timestamp()).await?;
+        let deleted = self.delete_logs_before(cutoff.timestamp()).await?;
         // Startup cleanup should not wait behind or block foreground work.
         // PASSIVE checkpoints copy whatever is immediately available and skip
         // frames that would require waiting on active readers or writers.
         sqlx::query("PRAGMA wal_checkpoint(PASSIVE)")
             .execute(self.logs_pool.as_ref())
             .await?;
-        Ok(())
+        sqlx::query("PRAGMA incremental_vacuum(4096)")
+            .execute(self.logs_pool.as_ref())
+            .await?;
+        Ok(deleted)
     }
 
     /// Query logs with optional filters.
@@ -722,6 +728,63 @@ mod tests {
         assert_eq!(auto_vacuum, 2);
         pool.close().await;
 
+        let _ = tokio::fs::remove_dir_all(codex_home).await;
+    }
+
+    #[tokio::test]
+    async fn maintenance_deletes_logs_older_than_configured_retention() {
+        let codex_home = unique_temp_dir();
+        let runtime = StateRuntime::init(
+            crate::SqliteConfig::new_for_testing(codex_home.as_path().abs()),
+            "test-provider".to_string(),
+        )
+        .await
+        .expect("initialize runtime");
+        let now = Utc::now().timestamp();
+        runtime
+            .insert_logs(&[
+                LogEntry {
+                    ts: now - chrono::Duration::days(3).num_seconds(),
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "test".to_string(),
+                    message: Some("old".to_string()),
+                    feedback_log_body: Some("old".to_string()),
+                    thread_id: Some("thread".to_string()),
+                    process_uuid: Some("process".to_string()),
+                    module_path: None,
+                    file: None,
+                    line: None,
+                },
+                LogEntry {
+                    ts: now,
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "test".to_string(),
+                    message: Some("fresh".to_string()),
+                    feedback_log_body: Some("fresh".to_string()),
+                    thread_id: Some("thread".to_string()),
+                    process_uuid: Some("process".to_string()),
+                    module_path: None,
+                    file: None,
+                    line: None,
+                },
+            ])
+            .await
+            .expect("insert logs");
+
+        runtime
+            .run_logs_maintenance(/*retention_days*/ 2)
+            .await
+            .expect("run log maintenance");
+        let rows = runtime
+            .query_logs(&LogQuery::default())
+            .await
+            .expect("query logs");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].message.as_deref(), Some("fresh"));
+
+        runtime.close().await;
         let _ = tokio::fs::remove_dir_all(codex_home).await;
     }
 

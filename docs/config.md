@@ -13,3 +13,11 @@ Admins can set top-level `allow_managed_hooks_only = true` in
 still allowing managed hooks from requirements and managed config layers. This
 setting is only supported in `requirements.toml`; putting it in `config.toml`
 does not enable managed-hooks-only mode.
+
+## Tomako runtime log maintenance
+
+The Tomako runtime periodically prunes the dedicated `logs_2.sqlite` database.
+Maintenance runs once every 24 hours after startup and keeps two days of log
+rows by default. Set `CODEX_LOG_RETENTION_DAYS` to an integer from 1 through 30
+in the runtime environment to override the window. This setting does not alter
+rollout, memory, queue, or thread-history databases.
