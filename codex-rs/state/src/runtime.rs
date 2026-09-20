@@ -39,7 +39,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicI64;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
-use tracing::warn;
+use tracing::{info, warn};
 
 mod backfill;
 mod external_agent_config_imports;
@@ -126,6 +126,7 @@ impl StateRuntime {
         default_provider: String,
         telemetry_override: Option<&dyn DbTelemetry>,
     ) -> anyhow::Result<Arc<Self>> {
+        let init_started = std::time::Instant::now();
         tokio::fs::create_dir_all(sqlite.home()).await?;
         let state_migrator = runtime_state_migrator();
         let logs_migrator = runtime_logs_migrator();
@@ -252,6 +253,10 @@ impl StateRuntime {
             };
         let thread_updated_at_millis = thread_updated_at_millis.unwrap_or(0);
         let thread_recency_at_millis = thread_recency_at_millis.unwrap_or(0);
+        info!(
+            elapsed_ms = init_started.elapsed().as_millis() as u64,
+            "state runtime databases opened"
+        );
         let runtime = Arc::new(Self {
             thread_goals: GoalStore::new(Arc::clone(&goals_pool)),
             memories: MemoryStore::new(Arc::clone(&memories_pool), Arc::clone(&pool)),
@@ -264,11 +269,26 @@ impl StateRuntime {
             thread_recency_at_millis: Arc::new(AtomicI64::new(thread_recency_at_millis)),
             logs_maintenance_stop: Arc::new(AtomicBool::new(false)),
         });
-        if let Err(err) = runtime.run_logs_startup_maintenance().await {
-            warn!(
-                "failed to run startup maintenance for logs db at {}: {err}",
-                logs_path.display(),
-            );
+        // Log maintenance must not sit on the startup critical path: pruning a
+        // bloated logs DB can take tens of seconds, which used to delay the
+        // first app-server handshake by exactly that much. Run it in the
+        // background; the daily loop below takes over afterwards.
+        {
+            let maintenance_runtime = Arc::clone(&runtime);
+            let maintenance_stop = Arc::clone(&runtime.logs_maintenance_stop);
+            tokio::spawn(async move {
+                if maintenance_stop.load(Ordering::Acquire) {
+                    return;
+                }
+                let started = std::time::Instant::now();
+                let result = maintenance_runtime.run_logs_startup_maintenance().await;
+                let elapsed_ms = started.elapsed().as_millis() as u64;
+                if let Err(err) = result {
+                    warn!(elapsed_ms, "startup Codex log maintenance failed: {err}");
+                } else {
+                    info!(elapsed_ms, "startup Codex log maintenance completed");
+                }
+            });
         }
         log_maintenance::spawn(&runtime, Arc::clone(&runtime.logs_maintenance_stop));
         Ok(runtime)
