@@ -1,3 +1,13 @@
+<!-- tomako-delivery-contract: v1 -->
+<!-- tomako-agent-guide-entry: v2 -->
+
+# Tomako delivery gates
+
+Read the workspace [central delivery policy](../tomako-dev-skills/docs/DELIVERY_GOVERNANCE.md)
+and the applicable Skill before branch, synchronization or deployment actions. This guide owns
+component architecture and tests; deployment routes and authorization are maintained centrally.
+Use the workspace `docs/architecture/domain-responsibility.md` for ownership questions.
+
 # Rust/codex-rs
 
 In the codex-rs folder where the rust code lives:

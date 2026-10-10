@@ -1,3 +1,4 @@
+# tomako-actions-scope: maintenance
 name: rust-release-prepare
 on:
   workflow_dispatch:

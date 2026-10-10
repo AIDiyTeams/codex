@@ -1,3 +1,4 @@
+# tomako-actions-scope: artifact
 name: rust-release-zsh
 
 on:

@@ -1,3 +1,4 @@
+# tomako-actions-scope: artifact
 name: publish-r2-release
 
 on:

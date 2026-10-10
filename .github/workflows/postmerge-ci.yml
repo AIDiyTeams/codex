@@ -1,3 +1,4 @@
+# tomako-actions-scope: ci
 name: postmerge-ci
 
 # This is the single entrypoint for main-only CI that is intentionally outside

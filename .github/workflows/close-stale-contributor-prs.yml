@@ -1,3 +1,4 @@
+# tomako-actions-scope: maintenance
 name: Close stale contributor PRs
 
 on:

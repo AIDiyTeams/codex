@@ -1,3 +1,4 @@
+# tomako-actions-scope: ci
 name: blob-size-policy
 
 on:

@@ -1,3 +1,4 @@
+# tomako-actions-scope: ci
 name: repo-checks
 
 on:

@@ -1,3 +1,4 @@
+# tomako-actions-scope: artifact
 # Release workflow for codex-rs.
 # To release, follow a workflow like:
 # ```
@@ -1581,6 +1582,7 @@ jobs:
     # The deploy updates developers.openai.com with the new config schema json file.
     if: >-
       ${{
+        github.repository == 'openai/codex' &&
         !cancelled() &&
         needs.release.result == 'success' &&
         !contains(needs.release.outputs.version, '-')

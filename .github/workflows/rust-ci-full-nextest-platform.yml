@@ -1,3 +1,4 @@
+# tomako-actions-scope: ci
 name: rust-ci-full nextest platform
 
 on:

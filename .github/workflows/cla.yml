@@ -1,3 +1,4 @@
+# tomako-actions-scope: maintenance
 name: CLA Assistant
 on:
   issue_comment:

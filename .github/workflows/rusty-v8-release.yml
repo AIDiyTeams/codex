@@ -1,3 +1,4 @@
+# tomako-actions-scope: artifact
 name: rusty-v8-release
 
 on:
