@@ -212,6 +212,8 @@ impl CommandExecRequestProcessor {
             let overrides = ConfigOverrides {
                 cwd: Some(cwd.to_path_buf()),
                 default_permissions: Some(permission_profile),
+                codex_linux_sandbox_exe: self.arg0_paths.codex_linux_sandbox_exe.clone(),
+                main_execve_wrapper_exe: self.arg0_paths.main_execve_wrapper_exe.clone(),
                 ..Default::default()
             };
             let config = self

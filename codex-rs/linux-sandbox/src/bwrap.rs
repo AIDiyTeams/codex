@@ -538,6 +538,18 @@ fn create_filesystem_args(
             allowed_write_paths.push(target);
         }
     }
+    // Read-only exceptions need the same parent-mask/reopen ordering as writable
+    // exceptions. Otherwise a later deny mask silently hides runtime helpers.
+    let allowed_read_paths: Vec<PathBuf> = file_system_sandbox_policy
+        .get_readable_roots_with_cwd(cwd)
+        .into_iter()
+        .filter(|path| {
+            path.as_path().exists()
+                && file_system_sandbox_policy.resolve_access_with_cwd(path.as_path(), cwd)
+                    == FileSystemAccessMode::Read
+        })
+        .map(AbsolutePathBuf::into_path_buf)
+        .collect();
     let unreadable_paths: HashSet<PathBuf> = unreadable_roots.iter().cloned().collect();
     let mut sorted_writable_roots = writable_roots;
     sorted_writable_roots.sort_by_key(|writable_root| path_depth(writable_root.root.as_path()));
@@ -560,7 +572,12 @@ fn create_filesystem_args(
     unreadable_ancestors_of_writable_roots.sort_by_key(|path| path_depth(path));
 
     for unreadable_root in &unreadable_ancestors_of_writable_roots {
-        append_unreadable_root_args(&mut bwrap_args, unreadable_root, &allowed_write_paths)?;
+        append_unreadable_root_args(
+            &mut bwrap_args,
+            unreadable_root,
+            &allowed_write_paths,
+            &allowed_read_paths,
+        )?;
     }
 
     for writable_root in &sorted_writable_roots {
@@ -637,7 +654,12 @@ fn create_filesystem_args(
         }
         nested_unreadable_roots.sort_by_key(|path| path_depth(path));
         for unreadable_root in nested_unreadable_roots {
-            append_unreadable_root_args(&mut bwrap_args, &unreadable_root, &allowed_write_paths)?;
+            append_unreadable_root_args(
+                &mut bwrap_args,
+                &unreadable_root,
+                &allowed_write_paths,
+                &allowed_read_paths,
+            )?;
         }
     }
 
@@ -653,7 +675,12 @@ fn create_filesystem_args(
         .collect();
     rootless_unreadable_roots.sort_by_key(|path| path_depth(path));
     for unreadable_root in rootless_unreadable_roots {
-        append_unreadable_root_args(&mut bwrap_args, &unreadable_root, &allowed_write_paths)?;
+        append_unreadable_root_args(
+            &mut bwrap_args,
+            &unreadable_root,
+            &allowed_write_paths,
+            &allowed_read_paths,
+        )?;
     }
 
     Ok(bwrap_args)
@@ -1141,6 +1168,7 @@ fn append_unreadable_root_args(
     bwrap_args: &mut BwrapArgs,
     unreadable_root: &Path,
     allowed_write_paths: &[PathBuf],
+    allowed_read_paths: &[PathBuf],
 ) -> Result<()> {
     if let Some(symlink) =
         first_writable_symlink_component_in_path(unreadable_root, allowed_write_paths)
@@ -1168,13 +1196,19 @@ fn append_unreadable_root_args(
         return Ok(());
     }
 
-    append_existing_unreadable_path_args(bwrap_args, unreadable_root, allowed_write_paths)
+    append_existing_unreadable_path_args(
+        bwrap_args,
+        unreadable_root,
+        allowed_write_paths,
+        allowed_read_paths,
+    )
 }
 
 fn append_existing_unreadable_path_args(
     bwrap_args: &mut BwrapArgs,
     unreadable_root: &Path,
     allowed_write_paths: &[PathBuf],
+    allowed_read_paths: &[PathBuf],
 ) -> Result<()> {
     if unreadable_root.is_dir() {
         let mut writable_descendants: Vec<&Path> = allowed_write_paths
@@ -1182,16 +1216,21 @@ fn append_existing_unreadable_path_args(
             .map(PathBuf::as_path)
             .filter(|path| *path != unreadable_root && path.starts_with(unreadable_root))
             .collect();
+        let mut readable_descendants: Vec<&Path> = allowed_read_paths
+            .iter()
+            .map(PathBuf::as_path)
+            .filter(|path| *path != unreadable_root && path.starts_with(unreadable_root))
+            .collect();
         bwrap_args.args.push("--perms".to_string());
-        // Execute-only perms let the process traverse into explicitly
-        // re-opened writable descendants while still hiding the denied
-        // directory contents. Plain denied directories with no writable child
-        // mounts stay at `000`.
-        bwrap_args.args.push(if writable_descendants.is_empty() {
-            "000".to_string()
-        } else {
-            "111".to_string()
-        });
+        // Permit traversal only when a narrower grant needs it. The parent
+        // remains unlistable and cannot be changed by the sandboxed process.
+        bwrap_args.args.push(
+            if writable_descendants.is_empty() && readable_descendants.is_empty() {
+                "000".to_string()
+            } else {
+                "111".to_string()
+            },
+        );
         bwrap_args.args.push("--tmpfs".to_string());
         bwrap_args.args.push(path_to_string(unreadable_root));
         // Recreate any writable descendants inside the tmpfs before remounting
@@ -1204,6 +1243,26 @@ fn append_existing_unreadable_path_args(
                 writable_descendant,
                 unreadable_root,
             );
+        }
+        readable_descendants.sort_by_key(|path| path_depth(path));
+        for readable_descendant in readable_descendants {
+            if let Some(symlink) =
+                first_writable_symlink_component_in_path(readable_descendant, allowed_write_paths)
+            {
+                return Err(CodexErr::Fatal(format!(
+                    "cannot enforce sandbox read-only path {} because it crosses writable symlink {}",
+                    readable_descendant.display(),
+                    symlink.display()
+                )));
+            }
+            append_mount_target_parent_dir_args(
+                &mut bwrap_args.args,
+                readable_descendant,
+                unreadable_root,
+            );
+            bwrap_args.args.push("--ro-bind".to_string());
+            bwrap_args.args.push(path_to_string(readable_descendant));
+            bwrap_args.args.push(path_to_string(readable_descendant));
         }
         bwrap_args.args.push("--remount-ro".to_string());
         bwrap_args.args.push(path_to_string(unreadable_root));

@@ -539,7 +539,7 @@ async fn http_plain_proxy(
     };
 
     // `x-unix-socket` is an escape hatch for talking to local daemons. We keep it tightly scoped:
-    // macOS-only + explicit allowlist by default, to avoid turning the proxy into a general local
+    // Explicit allowlist by default, to avoid turning the proxy into a general local
     // capability escalation mechanism.
     if let Some(unix_socket_header) = req.headers().get("x-unix-socket") {
         let socket_path = match unix_socket_header.to_str() {
@@ -921,7 +921,7 @@ async fn inject_plaintext_credentials_if_enabled(
 }
 
 async fn proxy_via_unix_socket(req: Request, socket_path: &str) -> Result<Response> {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let client = UpstreamClient::unix_socket(socket_path);
 
@@ -940,7 +940,7 @@ async fn proxy_via_unix_socket(req: Request, socket_path: &str) -> Result<Respon
         let req = Request::from_parts(parts, body);
         client.serve(req).await.map_err(anyhow::Error::from)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = req;
         let _ = socket_path;
@@ -1613,7 +1613,7 @@ mod tests {
         .await
         .unwrap();
 
-        if cfg!(target_os = "macos") {
+        if unix_socket_permissions_supported() {
             assert_eq!(response.status(), StatusCode::FORBIDDEN);
             assert_eq!(
                 response.headers().get("x-proxy-error").unwrap(),
@@ -1624,7 +1624,7 @@ mod tests {
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[tokio::test(flavor = "current_thread")]
     async fn http_plain_proxy_attempts_allowed_unix_socket_proxy() {
         let state = Arc::new(network_proxy_state_for_policy({
@@ -1775,3 +1775,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "linux_unix_proxy_tests.rs"]
+mod linux_unix_proxy_tests;

@@ -4036,6 +4036,7 @@ impl Config {
             &codex_home,
             zsh_path.as_ref(),
             main_execve_wrapper_exe.as_ref(),
+            codex_linux_sandbox_exe.as_ref(),
         );
         if features.enabled(Feature::MemoryTool) && memories_config.use_memories {
             helper_readable_roots.push(memories_root);

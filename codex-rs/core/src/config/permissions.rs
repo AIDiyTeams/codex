@@ -485,6 +485,7 @@ pub(crate) fn get_readable_roots_required_for_codex_runtime(
     codex_home: &Path,
     zsh_path: Option<&PathBuf>,
     main_execve_wrapper_exe: Option<&PathBuf>,
+    codex_linux_sandbox_exe: Option<&PathBuf>,
 ) -> Vec<AbsolutePathBuf> {
     let arg0_root = AbsolutePathBuf::from_absolute_path(codex_home.join("tmp").join("arg0")).ok();
     let zsh_path = zsh_path.and_then(|path| AbsolutePathBuf::from_absolute_path(path).ok());
@@ -505,6 +506,22 @@ pub(crate) fn get_readable_roots_required_for_codex_runtime(
     }
     if let Some(execve_wrapper_root) = execve_wrapper_root {
         readable_roots.push(execve_wrapper_root);
+    }
+    // Arg0 aliases can point outside CODEX_HOME and the platform's minimal
+    // system roots. Grant only the trusted executable targets, never their
+    // installation directories. Otherwise bubblewrap cannot re-enter itself
+    // or execute apply_patch with a restricted filesystem profile.
+    for executable in [main_execve_wrapper_exe, codex_linux_sandbox_exe]
+        .into_iter()
+        .flatten()
+    {
+        if let Ok(target) = executable.canonicalize()
+            && target.is_file()
+            && let Ok(target) = AbsolutePathBuf::from_absolute_path(target)
+            && !readable_roots.contains(&target)
+        {
+            readable_roots.push(target);
+        }
     }
     readable_roots
 }

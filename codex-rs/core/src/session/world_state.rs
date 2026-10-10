@@ -56,7 +56,7 @@ impl Session {
             model_instructions
         };
         let base_instructions = self.get_prompt_base_instructions().await.text;
-        let (previous_model, previous_context, base_instructions) = {
+        let (previous_model, previous_context, base_instructions, custom_base_instructions) = {
             let state = self.state.lock().await;
             (
                 state
@@ -75,6 +75,10 @@ impl Session {
                     }),
                 state.reference_context_item(),
                 base_instructions,
+                matches!(
+                    state.base_instructions_provenance,
+                    Some(BaseInstructionsProvenance::Custom)
+                ),
             )
         };
         let personality_is_baked = turn_context.model_info().supports_personality()
@@ -91,17 +95,27 @@ impl Session {
         world_state.add_section(ModelInstructionsState::new(
             &turn_context.model_info().slug,
             previous_model.as_deref(),
-            model_instructions,
+            // A custom base replaces model-derived instructions for the whole
+            // session, including model changes and restored/forked history.
+            // Keep the model snapshot without appending a native identity.
+            if custom_base_instructions {
+                String::new()
+            } else {
+                model_instructions
+            },
         ));
         if self.features.enabled(Feature::Personality) {
-            let personality_instructions = turn_context.personality().and_then(|personality| {
-                turn_context
-                    .model_info()
-                    .model_messages
-                    .as_ref()
-                    .and_then(|messages| messages.get_personality_message(Some(personality)))
-                    .filter(|message| !message.is_empty())
-            });
+            let personality_instructions = turn_context
+                .personality()
+                .filter(|_| !custom_base_instructions)
+                .and_then(|personality| {
+                    turn_context
+                        .model_info()
+                        .model_messages
+                        .as_ref()
+                        .and_then(|messages| messages.get_personality_message(Some(personality)))
+                        .filter(|message| !message.is_empty())
+                });
             world_state.add_section(PersonalityState::new(
                 &turn_context.model_info().slug,
                 turn_context.personality(),

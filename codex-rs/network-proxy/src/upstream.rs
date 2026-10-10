@@ -30,7 +30,7 @@ use std::time::Instant;
 use tracing::info;
 use tracing::warn;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use rama_unix::client::UnixConnector;
 
 #[derive(Clone, Default)]
@@ -149,7 +149,7 @@ impl UpstreamClient {
         )
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub(crate) fn unix_socket(path: &str) -> Self {
         let connector = build_unix_connector(path);
         Self {
@@ -273,7 +273,7 @@ fn build_http_connector(
 #[path = "upstream_tests.rs"]
 mod tests;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn build_unix_connector(
     path: &str,
 ) -> BoxService<

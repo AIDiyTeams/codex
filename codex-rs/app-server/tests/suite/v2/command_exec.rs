@@ -330,6 +330,62 @@ async fn command_exec_accepts_permission_profile() -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn command_exec_permission_profile_preserves_readonly_runtime_helpers() -> Result<()> {
+    let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
+    let codex_home = TempDir::new()?;
+    let workspace = TempDir::new()?;
+    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    std::fs::write(codex_home.path().join("private-canary"), "private")?;
+    let home = codex_home.path();
+    let cwd = workspace.path();
+    insert_command_exec_config(
+        home,
+        &format!(
+            "[permissions.private-home.filesystem]\n\":root\" = \"read\"\n{home:?} = \"deny\"\n{cwd:?} = \"write\"\n"
+        ),
+    )?;
+    let mut app_server = TestAppServer::builder()
+        .with_codex_home(home)
+        .without_auto_env()
+        .build_initialized_with_timeout(DEFAULT_READ_TIMEOUT)
+        .await?;
+    let request_id = app_server
+        .send_command_exec_request(CommandExecParams {
+            command: vec![
+                "sh".to_string(),
+                "-ec".to_string(),
+                "test ! -r \"$CODEX_HOME/private-canary\"; alias_dir=$(dirname \"$(command -v apply_patch)\"); test ! -w \"$alias_dir\"; apply_patch '*** Begin Patch\n*** Add File: runtime.txt\n+runtime alias\n*** End Patch'".to_string(),
+            ],
+            process_id: None,
+            tty: false,
+            stream_stdin: false,
+            stream_stdout_stderr: false,
+            output_bytes_cap: None,
+            disable_output_cap: false,
+            disable_timeout: false,
+            timeout_ms: None,
+            cwd: Some(cwd.to_path_buf()),
+            env: None,
+            size: None,
+            sandbox_policy: None,
+            permission_profile: Some("private-home".to_string()),
+        })
+        .await?;
+    let response: CommandExecResponse = app_server.read_response(request_id).await?;
+    assert_eq!(
+        response,
+        CommandExecResponse {
+            exit_code: 0,
+            stdout: "Success. Updated the following files:\nA runtime.txt\n".to_string(),
+            stderr: String::new(),
+        }
+    );
+    assert_eq!(std::fs::read(cwd.join("runtime.txt"))?, b"runtime alias\n");
+    Ok(())
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn command_exec_enforces_managed_deny_read_requirements() -> Result<()> {

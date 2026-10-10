@@ -1179,6 +1179,82 @@ async fn sandbox_reenables_writable_subpaths_under_unreadable_parents() {
 }
 
 #[tokio::test]
+async fn sandbox_reenables_readonly_helpers_under_unreadable_parent() {
+    if should_skip_bwrap_tests().await {
+        eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
+        return;
+    }
+    let directory = tempfile::tempdir().expect("tempdir");
+    let hidden = directory.path().join("private");
+    let helper = hidden.join("arg0/current");
+    let nested_secret = helper.join("secret");
+    let writable_grandchild = helper.join("outputs");
+    let deepest_secret = writable_grandchild.join("secret");
+    std::fs::create_dir_all(&writable_grandchild).unwrap();
+    std::fs::write(helper.join("helper"), "synthetic").unwrap();
+    std::fs::write(hidden.join("auth"), "synthetic secret").unwrap();
+    std::fs::write(&nested_secret, "synthetic nested secret").unwrap();
+    std::fs::write(&deepest_secret, "synthetic deepest secret").unwrap();
+    let sandbox_helper_dir = codex_linux_sandbox_exe().parent().unwrap().to_path_buf();
+    for root_access in [FileSystemAccessMode::Read, FileSystemAccessMode::Write] {
+        let mut entries = vec![FileSystemSandboxEntry::new(
+            FileSystemPath::Special {
+                value: FileSystemSpecialPath::Minimal,
+            },
+            FileSystemAccessMode::Read,
+        )];
+        for (path, access) in [
+            (directory.path(), root_access),
+            (sandbox_helper_dir.as_path(), FileSystemAccessMode::Read),
+            (hidden.as_path(), FileSystemAccessMode::Deny),
+            (helper.as_path(), FileSystemAccessMode::Read),
+            (nested_secret.as_path(), FileSystemAccessMode::Deny),
+            (writable_grandchild.as_path(), FileSystemAccessMode::Write),
+            (deepest_secret.as_path(), FileSystemAccessMode::Deny),
+        ] {
+            entries.push(FileSystemSandboxEntry::new(
+                AbsolutePathBuf::try_from(path).unwrap().into(),
+                access,
+            ));
+        }
+        let permission_profile = PermissionProfile::from_runtime_permissions(
+            &FileSystemSandboxPolicy::restricted(entries),
+            NetworkSandboxPolicy::Enabled,
+        );
+        let output = run_cmd_result_with_permission_profile(
+            &[
+                "bash",
+                "-c",
+                r#"
+                set -e
+                [ "$(cat "$1/arg0/current/helper")" = synthetic ]
+                ! cat "$1/auth" >/dev/null 2>&1
+                ! cat "$1/arg0/current/secret" >/dev/null 2>&1
+                ! cat "$1/arg0/current/outputs/secret" >/dev/null 2>&1
+                echo generated > "$1/arg0/current/outputs/result"
+                [ "$(cat "$1/arg0/current/outputs/result")" = generated ]
+                ! ls "$1" >/dev/null 2>&1
+                ! sh -c 'echo changed > "$1/arg0/current/helper"' sh "$1" 2>/dev/null
+                ! sh -c 'echo new > "$1/arg0/current/new"' sh "$1" 2>/dev/null
+                printf verified
+            "#,
+                "sh",
+                hidden.to_str().unwrap(),
+            ],
+            permission_profile,
+            LONG_TIMEOUT_MS,
+            /*use_legacy_landlock*/ false,
+        )
+        .await
+        .expect("read-only helper carveout should execute");
+        assert_eq!(
+            (output.exit_code, output.stdout.text.trim()),
+            (0, "verified")
+        );
+    }
+}
+
+#[tokio::test]
 async fn sandbox_blocks_root_read_carveouts_under_bwrap() {
     if should_skip_bwrap_tests().await {
         eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");

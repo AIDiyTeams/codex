@@ -683,6 +683,19 @@ impl NetworkProxyState {
         }
 
         let guard = self.state.read().await;
+        if cfg!(target_os = "linux") {
+            // Linux commands cannot open AF_UNIX sockets in proxy-routed mode.
+            // The trusted proxy may relay only an exact registered path. Never
+            // canonicalize attacker-provided aliases and then connect through
+            // the original alias: it could be swapped after the permission check.
+            // The host must keep the registered socket and ancestors immutable
+            // to sandboxed clients. The macOS allow-all escape hatch is ignored.
+            return Ok(guard
+                .config
+                .allow_unix_sockets()
+                .iter()
+                .any(|allowed| allowed == path));
+        }
         if guard.config.dangerously_allow_all_unix_sockets {
             return Ok(true);
         }
@@ -941,7 +954,7 @@ impl DomainListKind {
 }
 
 pub(crate) fn unix_socket_permissions_supported() -> bool {
-    cfg!(target_os = "macos")
+    cfg!(any(target_os = "macos", target_os = "linux"))
 }
 
 async fn host_resolves_to_non_public_ip<F, Fut>(
@@ -2148,9 +2161,9 @@ mod tests {
         assert!(!state.is_unix_socket_allowed("relative.sock").await.unwrap());
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     #[tokio::test]
-    async fn unix_socket_allowlist_is_rejected_on_non_macos() {
+    async fn unix_socket_allowlist_is_rejected_on_unsupported_platforms() {
         let socket_path = "/tmp/example.sock".to_string();
         let state = network_proxy_state_for_policy({
             let mut network = network_settings_with_unix_sockets(

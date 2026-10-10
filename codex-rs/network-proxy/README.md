@@ -75,7 +75,9 @@ action = ["strip_auth"]
 [permissions.workspace.network.mitm.actions.strip_auth]
 strip_request_headers = ["authorization"]
 
-# macOS-only: allows proxying to a unix socket when request includes `x-unix-socket: /path`.
+# macOS/Linux: proxy to a registered socket via `x-unix-socket: /path`.
+# Linux requires the exact configured path; clients must not be able to modify
+# the socket or its ancestors. Symlink aliases and the allow-all flag are not supported.
 [permissions.workspace.network.unix_sockets]
 "/tmp/example.sock" = "allow"
 ```
@@ -202,8 +204,10 @@ Audit events intentionally avoid logging full URL/path/query data.
 
 ## Platform notes
 
-- Unix socket proxying via the `x-unix-socket` header is **macOS-only**; other platforms will
-  reject unix socket requests.
+- Unix socket proxying via `x-unix-socket` supports macOS and Linux. Linux only
+  accepts an exact configured path, leaving sandboxed commands unable to open
+  AF_UNIX sockets directly. Keep the registered socket and its ancestors outside
+  client-writable mounts. Other platforms reject unix socket requests.
 - HTTPS tunneling uses rustls via Rama's `rama-tls-rustls`; this avoids BoringSSL/OpenSSL symbol
   collisions in mixed TLS dependency graphs.
 

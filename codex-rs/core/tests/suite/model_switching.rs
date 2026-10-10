@@ -210,6 +210,114 @@ async fn first_turn_model_change_appends_model_instructions_developer_message(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+enum CustomBaseSession {
+    Live,
+    Resumed,
+    Forked,
+}
+
+#[test_case(CustomBaseSession::Live; "configured custom base")]
+#[test_case(CustomBaseSession::Resumed; "resumed custom base")]
+#[test_case(CustomBaseSession::Forked; "forked custom base")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn model_change_preserves_custom_base_without_native_instructions(
+    session: CustomBaseSession,
+) -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = MockServer::start().await;
+    let response_mock = mount_sse_sequence(
+        &server,
+        vec![
+            sse_completed("resp-first"),
+            sse_completed("resp-followup"),
+            sse_completed("resp-switched"),
+        ],
+    )
+    .await;
+    let initial_model = "gpt-5.5";
+    let next_model = "gpt-5.4";
+    let custom_instructions = "You are the application's assistant. Preserve this custom identity.";
+    let mut builder = test_codex()
+        .with_model(initial_model)
+        .with_config(move |config| {
+            config.base_instructions = Some(custom_instructions.to_string());
+            config.personality = Some(Personality::Friendly);
+            config
+                .features
+                .enable(Feature::Personality)
+                .expect("enable personality");
+        });
+    let test = builder.build_with_auto_env(&server).await?;
+    submit_model_turn(
+        &test.codex,
+        initial_model,
+        ThreadSettingsOverrides::default(),
+    )
+    .await?;
+    submit_model_turn(
+        &test.codex,
+        initial_model,
+        ThreadSettingsOverrides {
+            personality: Some(Personality::Pragmatic),
+            ..Default::default()
+        },
+    )
+    .await?;
+
+    match session {
+        CustomBaseSession::Live => {
+            submit_model_turn(&test.codex, next_model, ThreadSettingsOverrides::default()).await?;
+        }
+        CustomBaseSession::Resumed => {
+            // Do not set a custom base on restart: provenance comes from the rollout.
+            let mut resume_builder = test_codex().with_model(initial_model);
+            let resumed = resume_builder.restart(&server, &test).await?;
+            submit_model_turn(
+                &resumed.codex,
+                next_model,
+                ThreadSettingsOverrides::default(),
+            )
+            .await?;
+        }
+        CustomBaseSession::Forked => {
+            test.codex.ensure_rollout_materialized().await;
+            test.codex.flush_rollout().await?;
+            let mut fork_config = test.config.clone();
+            fork_config.base_instructions = None;
+            let fork = test
+                .thread_manager
+                .fork_thread(
+                    ForkSnapshot::Interrupted,
+                    fork_config,
+                    test.codex.rollout_path().expect("rollout path"),
+                    /*thread_source*/ None,
+                    /*parent_trace*/ None,
+                )
+                .await?;
+            submit_model_turn(&fork.thread, next_model, ThreadSettingsOverrides::default()).await?;
+        }
+    }
+
+    let requests = response_mock.requests();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[2].body_json()["model"], next_model);
+    for request in requests {
+        assert_eq!(request.instructions_text(), custom_instructions);
+        assert!(
+            request
+                .message_input_texts("developer")
+                .iter()
+                .all(
+                    |text| !text.contains("<model_switch>") && !text.contains("<personality_spec>")
+                ),
+            "an explicit custom base must not acquire native model or personality instructions"
+        );
+    }
+    Ok(())
+}
+
 #[test_case(None, "gpt-5.2"; "model-generated base instructions and original model")]
 #[test_case(None, "gpt-5.4"; "model-generated base instructions and fork model")]
 #[test_case(Some("inherited custom base instructions"), "gpt-5.2"; "custom base instructions and original model")]

@@ -111,6 +111,60 @@ async fn restricted_read_implicitly_allows_helper_executables() -> std::io::Resu
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn runtime_symlink_targets_are_readable_without_granting_installation_directories()
+-> std::io::Result<()> {
+    let temp = TempDir::new()?;
+    // macOS temporary paths may start at /var, an alias for /private/var.
+    // Compare grants against the canonical executable paths the helper returns.
+    let temp_path = temp.path().canonicalize()?;
+    let home = temp_path.join("home");
+    let aliases = home.join("tmp/arg0/current");
+    let runtime = temp_path.join("runtime");
+    std::fs::create_dir_all(&aliases)?;
+    std::fs::create_dir_all(&runtime)?;
+    let wrapper = aliases.join("execve-wrapper");
+    let sandbox = aliases.join("linux-sandbox");
+    let executable = runtime.join("codex");
+    let sandbox_target = runtime.join("sandbox");
+    std::fs::write(&executable, "synthetic executable")?;
+    std::fs::write(&sandbox_target, "synthetic sandbox")?;
+    std::os::unix::fs::symlink(&executable, &wrapper)?;
+    std::os::unix::fs::symlink(&sandbox_target, &sandbox)?;
+    let roots = get_readable_roots_required_for_codex_runtime(
+        &home,
+        /*zsh_path*/ None,
+        Some(&wrapper),
+        Some(&sandbox),
+    );
+    let policy = FileSystemSandboxPolicy::restricted(Vec::new())
+        .with_additional_readable_roots(&temp_path, &roots);
+    assert_eq!(
+        [
+            &aliases,
+            &executable,
+            &sandbox_target,
+            &runtime,
+            &runtime.join("private"),
+            &home.join("tmp/arg0/sibling"),
+        ]
+        .map(|path| (
+            policy.can_read_path_with_cwd(path, &temp_path),
+            policy.can_write_path_with_cwd(path, &temp_path),
+        )),
+        [
+            (true, false),
+            (true, false),
+            (true, false),
+            (false, false),
+            (false, false),
+            (false, false)
+        ],
+    );
+    Ok(())
+}
+
 #[test]
 fn network_toml_ignores_legacy_network_list_keys() {
     let parsed = toml::from_str::<NetworkToml>(
