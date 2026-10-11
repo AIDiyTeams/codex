@@ -443,6 +443,7 @@ async fn specs_filter_deferred_dynamic_tools() -> anyhow::Result<()> {
         description: "Codex app tools.".to_string(),
         tools: vec![
             DynamicToolNamespaceTool::Function(DynamicToolFunctionSpec {
+                supports_parallel_tool_calls: false,
                 name: hidden_tool.to_string(),
                 description: "Hidden until discovered.".to_string(),
                 input_schema: json!({
@@ -453,6 +454,7 @@ async fn specs_filter_deferred_dynamic_tools() -> anyhow::Result<()> {
                 defer_loading: true,
             }),
             DynamicToolNamespaceTool::Function(DynamicToolFunctionSpec {
+                supports_parallel_tool_calls: false,
                 name: visible_tool.to_string(),
                 description: "Visible immediately.".to_string(),
                 input_schema: json!({

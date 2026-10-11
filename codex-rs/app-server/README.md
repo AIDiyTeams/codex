@@ -2067,6 +2067,8 @@ If the session approval policy uses `Granular` with `request_permissions: false`
 
 `dynamicTools` on `thread/start` and the corresponding `item/tool/call` request/response flow are experimental APIs. To enable them, set `initialize.params.capabilities.experimentalApi = true`.
 
+A function may set `supportsParallelToolCalls: true` to explicitly permit overlapping calls. Omission or `false` keeps the existing exclusive execution gate, including against parallel-capable tools. The host must opt in only when the implementation is concurrency-safe and enforce its own resource limits; the model cannot select this flag in call arguments. The flag is persisted with the tool registration (including legacy registrations) and is not sent as a model-visible parameter. Existing clients and saved tools remain serial by default.
+
 Each entry in `dynamicTools` is either a top-level function or a namespace containing function tools. Dynamic tool identifiers follow the same constraints as Responses tools:
 
 - `name` must match `^[a-zA-Z0-9_-]+$` and be between 1 and 128 characters.

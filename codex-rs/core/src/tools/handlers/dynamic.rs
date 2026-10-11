@@ -33,6 +33,7 @@ pub struct DynamicToolHandler {
     tool_name: ToolName,
     spec: ToolSpec,
     exposure: ToolExposure,
+    supports_parallel_tool_calls: bool,
 }
 
 impl DynamicToolHandler {
@@ -71,6 +72,7 @@ impl DynamicToolHandler {
             None => ToolSpec::Function(output_tool),
         };
         Some(Self {
+            supports_parallel_tool_calls: tool.supports_parallel_tool_calls,
             tool_name,
             spec,
             exposure: if tool.defer_loading {
@@ -89,6 +91,10 @@ impl ToolExecutor<ToolInvocation> for DynamicToolHandler {
 
     fn spec(&self) -> ToolSpec {
         self.spec.clone()
+    }
+
+    fn supports_parallel_tool_calls(&self) -> bool {
+        self.supports_parallel_tool_calls
     }
 
     fn exposure(&self) -> ToolExposure {

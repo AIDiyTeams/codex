@@ -454,6 +454,7 @@ fn mcp_runtime(
 
 fn dynamic_tool(namespace: Option<&str>, name: &str, defer_loading: bool) -> DynamicToolSpec {
     let function = codex_protocol::dynamic_tools::DynamicToolFunctionSpec {
+        supports_parallel_tool_calls: false,
         name: name.to_string(),
         description: format!("{name} dynamic tool"),
         input_schema: json!({

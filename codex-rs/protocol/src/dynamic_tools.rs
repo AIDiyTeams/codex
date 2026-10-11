@@ -24,6 +24,9 @@ pub struct DynamicToolFunctionSpec {
     pub input_schema: JsonValue,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub defer_loading: bool,
+    /// Host opt-in for calls that may safely overlap. Omitted tools remain exclusive.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub supports_parallel_tool_calls: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
@@ -85,6 +88,8 @@ struct LegacyDynamicToolSpec {
     input_schema: JsonValue,
     defer_loading: Option<bool>,
     expose_to_context: Option<bool>,
+    #[serde(default)]
+    supports_parallel_tool_calls: bool,
 }
 
 pub fn normalize_dynamic_tool_specs(
@@ -117,6 +122,7 @@ pub fn normalize_dynamic_tool_specs(
         .map(|value| {
             let tool: LegacyDynamicToolSpec = serde_json::from_value(value)?;
             let function = DynamicToolFunctionSpec {
+                supports_parallel_tool_calls: tool.supports_parallel_tool_calls,
                 name: tool.name,
                 description: tool.description,
                 input_schema: tool.input_schema,
@@ -173,3 +179,7 @@ where
         .map(Some)
         .map_err(D::Error::custom)
 }
+
+#[cfg(test)]
+#[path = "dynamic_tools_tests.rs"]
+mod tests;

@@ -187,6 +187,7 @@ async fn thread_start_rejects_hidden_dynamic_tools_without_namespace() -> Result
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
     let dynamic_tool = DynamicToolSpec::Function(DynamicToolFunctionSpec {
+        supports_parallel_tool_calls: false,
         name: "hidden_tool".to_string(),
         description: "Hidden dynamic tool".to_string(),
         input_schema: json!({
@@ -396,12 +397,14 @@ async fn dynamic_tool_call_round_trip_sends_text_content_items_to_model() -> Res
         description: namespace_description.to_string(),
         tools: vec![
             DynamicToolNamespaceTool::Function(DynamicToolFunctionSpec {
+                supports_parallel_tool_calls: false,
                 name: tool_name.to_string(),
                 description: "Demo dynamic tool".to_string(),
                 input_schema: input_schema.clone(),
                 defer_loading: false,
             }),
             DynamicToolNamespaceTool::Function(DynamicToolFunctionSpec {
+                supports_parallel_tool_calls: false,
                 name: "lookup_status".to_string(),
                 description: "Look up ticket status".to_string(),
                 input_schema: status_schema.clone(),
@@ -610,6 +613,7 @@ async fn start_function_dynamic_tool_call(call_id: &str) -> Result<PendingDynami
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
     let dynamic_tool = DynamicToolSpec::Function(DynamicToolFunctionSpec {
+        supports_parallel_tool_calls: false,
         name: tool_name.to_string(),
         description: "Demo dynamic tool".to_string(),
         input_schema: json!({

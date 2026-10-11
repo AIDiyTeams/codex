@@ -201,6 +201,7 @@ async fn resume_restores_dynamic_tools_from_rollout_with_sqlite_enabled() -> Res
         description: namespace_description.to_string(),
         tools: vec![DynamicToolNamespaceTool::Function(
             DynamicToolFunctionSpec {
+                supports_parallel_tool_calls: false,
                 name: tool_name.to_string(),
                 description: tool_description.to_string(),
                 input_schema: input_schema.clone(),

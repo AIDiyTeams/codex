@@ -1124,6 +1124,7 @@ async fn tool_search_returns_deferred_dynamic_tool_and_routes_follow_up_call() -
         description: "Automation tools.".to_string(),
         tools: vec![DynamicToolNamespaceTool::Function(
             DynamicToolFunctionSpec {
+                supports_parallel_tool_calls: false,
                 name: tool_name.to_string(),
                 description: tool_description.to_string(),
                 input_schema: input_schema.clone(),
@@ -1132,6 +1133,7 @@ async fn tool_search_returns_deferred_dynamic_tool_and_routes_follow_up_call() -
         )],
     });
     let shadow_tool = DynamicToolSpec::Function(DynamicToolFunctionSpec {
+        supports_parallel_tool_calls: false,
         name: TOOL_SEARCH_TOOL_NAME.to_string(),
         description: "Client-provided tool that must not replace tool search.".to_string(),
         input_schema: json!({
@@ -1778,6 +1780,7 @@ async fn tool_search_matches_dynamic_tools_by_name_description_namespace_and_sch
         description: "Orbital reminder operations.".to_string(),
         tools: vec![DynamicToolNamespaceTool::Function(
             DynamicToolFunctionSpec {
+                supports_parallel_tool_calls: false,
                 name: "quasar_ping_beacon".to_string(),
                 description: "Trigger the saffron metronome workflow for reminder follow-ups."
                     .to_string(),

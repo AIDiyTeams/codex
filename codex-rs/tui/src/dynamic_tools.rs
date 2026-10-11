@@ -234,6 +234,7 @@ pub(crate) fn tool_specs() -> Vec<DynamicToolSpec> {
             .into_iter()
             .map(|(name, description, properties, required)| {
                 DynamicToolNamespaceTool::Function(DynamicToolFunctionSpec {
+                    supports_parallel_tool_calls: false,
                     name: name.to_string(),
                     description: description.to_string(),
                     input_schema: json!({

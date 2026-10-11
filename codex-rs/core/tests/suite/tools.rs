@@ -98,6 +98,7 @@ async fn strict_tool_collisions_fail_the_turn_before_sampling(
                 description: description.to_string(),
                 tools: vec![DynamicToolNamespaceTool::Function(
                     DynamicToolFunctionSpec {
+                        supports_parallel_tool_calls: false,
                         name: name.to_string(),
                         description: format!("The {name} tool."),
                         input_schema: json!({
@@ -113,6 +114,7 @@ async fn strict_tool_collisions_fail_the_turn_before_sampling(
         .collect()
     } else {
         vec![DynamicToolSpec::Function(DynamicToolFunctionSpec {
+            supports_parallel_tool_calls: false,
             name: "update_plan".to_string(),
             description: "Collides with the built-in planning tool.".to_string(),
             input_schema: json!({

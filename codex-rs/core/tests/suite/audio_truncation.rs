@@ -83,6 +83,7 @@ async fn dynamic_tool_audio_exceeding_the_output_budget_is_omitted() -> Result<(
         description: "Audio tools.".to_string(),
         tools: vec![DynamicToolNamespaceTool::Function(
             DynamicToolFunctionSpec {
+                supports_parallel_tool_calls: false,
                 name: tool_name.to_string(),
                 description: "Returns a recording.".to_string(),
                 input_schema: serde_json::json!({

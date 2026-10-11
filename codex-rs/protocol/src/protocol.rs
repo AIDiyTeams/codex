@@ -4529,6 +4529,7 @@ mod tests {
                     tools: vec![
                         crate::dynamic_tools::DynamicToolNamespaceTool::Function(
                             crate::dynamic_tools::DynamicToolFunctionSpec {
+                                supports_parallel_tool_calls: false,
                                 name: "lookup_ticket".to_string(),
                                 description: "Look up a ticket".to_string(),
                                 input_schema: json!({"type": "object", "properties": {}}),
@@ -4537,6 +4538,7 @@ mod tests {
                         ),
                         crate::dynamic_tools::DynamicToolNamespaceTool::Function(
                             crate::dynamic_tools::DynamicToolFunctionSpec {
+                                supports_parallel_tool_calls: false,
                                 name: "update_ticket".to_string(),
                                 description: "Update a ticket".to_string(),
                                 input_schema: json!({"type": "object", "properties": {}}),

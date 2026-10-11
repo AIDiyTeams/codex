@@ -2092,12 +2092,14 @@ async fn remote_compact_filters_deferred_dynamic_tools() -> Result<()> {
         description: "Codex app tools.".to_string(),
         tools: vec![
             DynamicToolNamespaceTool::Function(DynamicToolFunctionSpec {
+                supports_parallel_tool_calls: false,
                 name: hidden_tool.to_string(),
                 description: "Hidden until discovered.".to_string(),
                 input_schema: input_schema.clone(),
                 defer_loading: true,
             }),
             DynamicToolNamespaceTool::Function(DynamicToolFunctionSpec {
+                supports_parallel_tool_calls: false,
                 name: visible_tool.to_string(),
                 description: "Visible immediately.".to_string(),
                 input_schema,
@@ -2207,6 +2209,7 @@ async fn remote_compact_does_not_charge_inline_audio_payload_as_text() -> Result
         description: "Audio tools.".to_string(),
         tools: vec![DynamicToolNamespaceTool::Function(
             DynamicToolFunctionSpec {
+                supports_parallel_tool_calls: false,
                 name: tool_name.to_string(),
                 description: "Returns a recording.".to_string(),
                 input_schema: json!({
@@ -2796,6 +2799,7 @@ async fn remote_compact_trims_tool_search_output_to_empty_tools_array() -> Resul
         description: "Codex app tools.".to_string(),
         tools: vec![DynamicToolNamespaceTool::Function(
             DynamicToolFunctionSpec {
+                supports_parallel_tool_calls: false,
                 name: tool_name.to_string(),
                 description: tool_description,
                 input_schema,

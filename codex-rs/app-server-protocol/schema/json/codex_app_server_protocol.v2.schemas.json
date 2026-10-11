@@ -6451,6 +6451,10 @@
             "name": {
               "type": "string"
             },
+            "supportsParallelToolCalls": {
+              "description": "Host opt-in for calls that may safely overlap. Omitted tools remain exclusive.",
+              "type": "boolean"
+            },
             "type": {
               "enum": [
                 "function"
@@ -6483,6 +6487,10 @@
             "inputSchema": true,
             "name": {
               "type": "string"
+            },
+            "supportsParallelToolCalls": {
+              "description": "Host opt-in for calls that may safely overlap. Omitted tools remain exclusive.",
+              "type": "boolean"
             },
             "type": {
               "enum": [

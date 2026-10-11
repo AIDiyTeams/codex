@@ -149,6 +149,7 @@ mod thread_processor_behavior_tests {
         defer_loading: bool,
     ) -> DynamicToolSpec {
         let function = DynamicToolFunctionSpec {
+            supports_parallel_tool_calls: false,
             name: name.into(),
             description: "test".to_string(),
             input_schema,
@@ -253,6 +254,7 @@ mod thread_processor_behavior_tests {
     #[test]
     fn validate_dynamic_tools_rejects_duplicate_name_in_same_namespace() {
         let function = || DynamicToolFunctionSpec {
+            supports_parallel_tool_calls: false,
             name: "my_tool".to_string(),
             description: "test".to_string(),
             input_schema: json!({

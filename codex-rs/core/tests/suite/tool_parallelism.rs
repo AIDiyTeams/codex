@@ -433,3 +433,144 @@ async fn shell_tools_start_before_response_completed_when_stream_delayed() -> an
 
     Ok(())
 }
+
+#[test_case::test_case(false, false; "default tools stay exclusive")]
+#[test_case::test_case(true, true; "opted in tools overlap")]
+#[test_case::test_case(true, false; "exclusive tool waits for parallel tool")]
+#[test_case::test_case(false, true; "parallel tool waits for exclusive tool")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dynamic_tools_respect_explicit_parallel_admission(
+    first_parallel: bool,
+    second_parallel: bool,
+) -> anyhow::Result<()> {
+    use codex_core::StartThreadOptions;
+    use codex_protocol::dynamic_tools::DynamicToolCallOutputContentItem;
+    use codex_protocol::dynamic_tools::DynamicToolResponse;
+    use codex_protocol::dynamic_tools::normalize_dynamic_tool_specs;
+    use codex_protocol::protocol::Op;
+
+    skip_if_no_network!(Ok(()));
+    let server = start_mock_server().await;
+    let mock = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("parallel-dynamic-1"),
+                ev_function_call("first", "first_tool", "{}"),
+                ev_function_call("second", "second_tool", "{}"),
+                ev_completed("parallel-dynamic-1"),
+            ]),
+            sse(vec![
+                ev_assistant_message("done", "finished"),
+                ev_completed("parallel-dynamic-2"),
+            ]),
+        ],
+    )
+    .await;
+    let mut builder = test_codex();
+    let test = builder.build_with_auto_env(&server).await?;
+    let specs = [
+        ("first_tool", first_parallel),
+        ("second_tool", second_parallel),
+    ]
+    .into_iter()
+    .map(|(name, parallel)| {
+        let mut spec = json!({
+            "type": "function", "name": name, "description": "Host tool",
+            "inputSchema": {"type": "object", "properties": {}},
+        });
+        if parallel {
+            spec["supportsParallelToolCalls"] = json!(true);
+        }
+        spec
+    })
+    .collect();
+    let thread = test
+        .thread_manager
+        .start_thread(StartThreadOptions {
+            dynamic_tools: normalize_dynamic_tool_specs(specs)?,
+            ..StartThreadOptions::new(test.config.clone())
+        })
+        .await?
+        .thread;
+    thread
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "Call both tools".to_string(),
+            text_elements: Vec::new(),
+        }]))
+        .await?;
+    let EventMsg::DynamicToolCallRequest(first) = wait_for_event(&thread, |event| {
+        matches!(event, EventMsg::DynamicToolCallRequest(_))
+    })
+    .await
+    else {
+        unreachable!("matching event")
+    };
+    let mut second = if first_parallel && second_parallel {
+        // Positive overlap waits for the normal test event timeout; do not use
+        // a short scheduling deadline as a performance assertion on loaded CI.
+        let EventMsg::DynamicToolCallRequest(second) = wait_for_event(&thread, |event| {
+            matches!(event, EventMsg::DynamicToolCallRequest(_))
+        })
+        .await
+        else {
+            unreachable!("matching event")
+        };
+        Some(second)
+    } else {
+        let next = tokio::time::timeout(
+            Duration::from_millis(500),
+            wait_for_event(&thread, |event| {
+                matches!(event, EventMsg::DynamicToolCallRequest(_))
+            }),
+        )
+        .await;
+        assert!(
+            next.is_err(),
+            "exclusive call must wait for the first response"
+        );
+        None
+    };
+    let response = DynamicToolResponse {
+        content_items: vec![DynamicToolCallOutputContentItem::InputText {
+            text: "ok".to_string(),
+        }],
+        success: true,
+    };
+    thread
+        .submit(Op::DynamicToolResponse {
+            id: first.call_id.clone(),
+            response: response.clone(),
+        })
+        .await?;
+    if second.is_none() {
+        let EventMsg::DynamicToolCallRequest(request) = wait_for_event(&thread, |event| {
+            matches!(event, EventMsg::DynamicToolCallRequest(_))
+        })
+        .await
+        else {
+            unreachable!("matching event")
+        };
+        second = Some(request);
+    }
+    let second = second.unwrap();
+    let mut ids = vec![first.call_id, second.call_id.clone()];
+    ids.sort();
+    assert_eq!(ids, vec!["first", "second"]);
+    thread
+        .submit(Op::DynamicToolResponse {
+            id: second.call_id,
+            response,
+        })
+        .await?;
+    wait_for_event(&thread, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 2);
+    for tool in requests[0].body_json()["tools"].as_array().unwrap() {
+        assert!(
+            tool.get("supportsParallelToolCalls").is_none(),
+            "host admission is not a model parameter"
+        );
+    }
+    Ok(())
+}

@@ -312,6 +312,7 @@ mod tests {
                 .expect("MCP tool should convert"),
         );
         let mut dynamic_tool = DynamicToolFunctionSpec {
+            supports_parallel_tool_calls: false,
             name: "lookup".to_string(),
             description: "Search current records".to_string(),
             input_schema: serde_json::json!({"type": "object", "properties": {}}),
@@ -362,6 +363,7 @@ mod tests {
             tools: Vec::new(),
         };
         let dynamic_tools = [DynamicToolFunctionSpec {
+            supports_parallel_tool_calls: false,
             name: "automation_update".to_string(),
             description: "Create, update, view, or delete recurring automations.".to_string(),
             input_schema: serde_json::json!({

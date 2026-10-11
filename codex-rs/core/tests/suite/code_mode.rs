@@ -941,6 +941,7 @@ async fn code_mode_excludes_mcp_servers_using_their_configured_identity() -> Res
                             .to_string(),
                         tools: vec![DynamicToolNamespaceTool::Function(
                             DynamicToolFunctionSpec {
+                                supports_parallel_tool_calls: false,
                                 name: "unrelated".to_string(),
                                 description: "A dynamic tool that must remain in Code Mode."
                                     .to_string(),
@@ -5453,6 +5454,7 @@ async fn code_mode_uses_the_first_dynamic_tool_for_a_normalized_name() -> Result
                 .into_iter()
                 .map(|(name, description)| {
                     DynamicToolSpec::Function(DynamicToolFunctionSpec {
+                        supports_parallel_tool_calls: false,
                         name: name.to_string(),
                         description: description.to_string(),
                         input_schema: serde_json::json!({
@@ -5690,6 +5692,7 @@ async fn code_mode_renders_local_refs_in_outbound_exec_description() -> Result<(
         .thread_manager
         .start_thread(StartThreadOptions {
             dynamic_tools: vec![DynamicToolSpec::Function(DynamicToolFunctionSpec {
+                supports_parallel_tool_calls: false,
                 name: "boolean_search".to_string(),
                 description: "Search with nested Boolean clauses.".to_string(),
                 input_schema: serde_json::json!({
@@ -5766,6 +5769,7 @@ async fn code_mode_can_call_hidden_dynamic_tools() -> Result<()> {
                 description: "Codex app tools.".to_string(),
                 tools: vec![DynamicToolNamespaceTool::Function(
                     DynamicToolFunctionSpec {
+                        supports_parallel_tool_calls: false,
                         name: "hidden_dynamic_tool".to_string(),
                         description: "A hidden dynamic tool.".to_string(),
                         input_schema: serde_json::json!({
@@ -5933,6 +5937,7 @@ async fn code_mode_excludes_configured_nested_tool_namespaces() -> Result<()> {
                 description: "Excluded tools.".to_string(),
                 tools: vec![DynamicToolNamespaceTool::Function(
                     DynamicToolFunctionSpec {
+                        supports_parallel_tool_calls: false,
                         name: "lookup".to_string(),
                         description: "An excluded dynamic tool.".to_string(),
                         input_schema: serde_json::json!({
