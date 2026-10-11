@@ -6707,6 +6707,10 @@
       },
       "type": "object"
     },
+    "prompt_cache_key": {
+      "description": "Optional Responses API `prompt_cache_key` used instead of the session id. Threads that start with an identical request prefix can share one key so that a new thread's first request reuses the cached prefix.",
+      "type": "string"
+    },
     "realtime": {
       "allOf": [
         {

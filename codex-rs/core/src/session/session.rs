@@ -1472,7 +1472,8 @@ impl Session {
                     crate::guardian::prompt_cache_key_override_for_review_session(
                         &session_configuration.session_source,
                         session_configuration.parent_thread_id,
-                    ),
+                    )
+                    .or_else(|| config.prompt_cache_key.clone()),
                     tx_event.clone(),
                 ),
                 executed_tool_calls: executed_tool_calls.clone(),

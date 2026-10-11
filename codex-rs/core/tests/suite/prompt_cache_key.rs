@@ -8,6 +8,7 @@ use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call_with_namespace;
 use core_test_support::responses::ev_response_created;
+use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::mount_sse_once_match;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
@@ -20,6 +21,7 @@ const ROOT_PROMPT: &str = "delegate the cache audit";
 const CHILD_TASK: &str = "inspect the repository";
 const SPAWN_CALL_ID: &str = "spawn-worker";
 const COLLABORATION_NAMESPACE: &str = "collaboration";
+const SHARED_PROMPT_CACHE_KEY: &str = "tomako:test:0123456789abcdef";
 
 fn body_contains(request: &wiremock::Request, text: &str) -> bool {
     serde_json::from_slice::<Value>(&request.body).is_ok_and(|body| body.to_string().contains(text))
@@ -154,6 +156,34 @@ async fn api_key_subagent_uses_session_id_as_prompt_cache_key() -> Result<()> {
                 "promptCacheKey": &expected_session_id,
             },
         })
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn configured_prompt_cache_key_replaces_session_id() -> Result<()> {
+    let server = start_mock_server().await;
+    let response = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("shared-key-response"),
+            ev_completed("shared-key-response"),
+        ]),
+    )
+    .await;
+
+    let mut builder = test_codex()
+        .with_auth(CodexAuth::from_api_key("dummy"))
+        .with_config(|config| {
+            config.prompt_cache_key = Some(SHARED_PROMPT_CACHE_KEY.to_string());
+        });
+    let test = builder.build(&server).await?;
+    test.submit_turn(ROOT_PROMPT).await?;
+
+    assert_eq!(
+        response.single_request().body_json()["prompt_cache_key"],
+        json!(SHARED_PROMPT_CACHE_KEY)
     );
 
     Ok(())

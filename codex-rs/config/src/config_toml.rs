@@ -363,6 +363,11 @@ pub struct ConfigToml {
     /// Optional verbosity control for GPT-5 models (Responses API `text.verbosity`).
     pub model_verbosity: Option<Verbosity>,
 
+    /// Optional Responses API `prompt_cache_key` used instead of the session id.
+    /// Threads that start with an identical request prefix can share one key so
+    /// that a new thread's first request reuses the cached prefix.
+    pub prompt_cache_key: Option<String>,
+
     /// Optional path to a JSON model catalog (applied on startup only).
     /// Per-thread `config` overrides are accepted but do not reapply this (no-ops).
     pub model_catalog_json: Option<AbsolutePathBuf>,

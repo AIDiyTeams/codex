@@ -11319,6 +11319,27 @@ include_instructions = false
 }
 
 #[tokio::test]
+async fn prompt_cache_key_is_accepted_as_strict_config_override() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let config = ConfigBuilder::without_managed_config_for_tests()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(codex_home.path().to_path_buf()))
+        .cli_overrides(vec![(
+            "prompt_cache_key".to_string(),
+            TomlValue::String("tomako:test:0123456789abcdef".to_string()),
+        )])
+        .strict_config(/*strict_config*/ true)
+        .build()
+        .await?;
+
+    assert_eq!(
+        config.prompt_cache_key.as_deref(),
+        Some("tomako:test:0123456789abcdef")
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn approvals_reviewer_stays_manual_only_when_guardian_feature_is_enabled()
 -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
