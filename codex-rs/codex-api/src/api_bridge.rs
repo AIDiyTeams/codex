@@ -19,6 +19,31 @@ use serde::Deserialize;
 use serde_json::Value;
 
 pub fn map_api_error(err: ApiError) -> CodexErr {
+    let retry_veto = match &err {
+        ApiError::Transport(TransportError::Http {
+            status,
+            headers,
+            body,
+            ..
+        }) if codex_client::explicitly_disables_retry(headers.as_ref()) => Some(format!(
+            "Upstream request failed (HTTP {status}); automatic retry disabled: {}",
+            body.as_deref().unwrap_or_default()
+        )),
+        _ => None,
+    };
+    let mapped = map_api_error_without_retry_veto(err);
+    // Already terminal errors carry dedicated UI/recovery semantics. Preserve
+    // them; the veto only needs to stop errors that would otherwise be retried.
+    if mapped.is_retryable()
+        && let Some(message) = retry_veto
+    {
+        CodexErr::Fatal(message)
+    } else {
+        mapped
+    }
+}
+
+fn map_api_error_without_retry_veto(err: ApiError) -> CodexErr {
     match err {
         ApiError::ContextWindowExceeded => CodexErr::ContextWindowExceeded,
         ApiError::QuotaExceeded => CodexErr::QuotaExceeded,
@@ -71,12 +96,6 @@ pub fn map_api_error(err: ApiError) -> CodexErr {
                 body,
             } => {
                 let body_text = body.unwrap_or_default();
-
-                if codex_client::explicitly_disables_retry(headers.as_ref()) {
-                    return CodexErr::Fatal(format!(
-                        "Upstream request failed (HTTP {status}); automatic retry disabled: {body_text}"
-                    ));
-                }
 
                 if status == http::StatusCode::SERVICE_UNAVAILABLE
                     && let Ok(value) = serde_json::from_str::<serde_json::Value>(&body_text)

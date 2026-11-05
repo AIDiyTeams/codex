@@ -5,6 +5,59 @@ use codex_protocol::protocol::RateLimitReachedType;
 use pretty_assertions::assert_eq;
 
 #[test]
+fn explicit_retry_veto_preserves_existing_non_retryable_errors() {
+    for (status, body) in [
+        (
+            400,
+            r#"{"error":{"code":"cyber_policy","message":"policy detail"}}"#,
+        ),
+        (
+            403,
+            r#"{"error":{"code":"misalignment_policy_violation","message":"policy detail"}}"#,
+        ),
+        (
+            429,
+            r#"{"error":{"type":"usage_limit_reached","plan_type":"plus","resets_at":1893456000}}"#,
+        ),
+        (429, r#"{"error":{"type":"usage_not_included"}}"#),
+        (503, r#"{"error":{"code":"server_is_overloaded"}}"#),
+        (
+            400,
+            "The image data you provided does not represent a valid image",
+        ),
+    ] {
+        let map = |veto| {
+            let mut headers = HeaderMap::new();
+            if veto {
+                headers.insert("x-should-retry", http::HeaderValue::from_static("false"));
+            }
+            map_api_error(ApiError::Transport(TransportError::Http {
+                status: http::StatusCode::from_u16(status).unwrap(),
+                url: None,
+                headers: Some(headers),
+                body: Some(body.to_string()),
+            }))
+        };
+        let original = map(/*veto*/ false);
+        let with_veto = map(/*veto*/ true);
+        assert!(
+            !original.is_retryable(),
+            "fixture must already stop retries"
+        );
+        assert!(!with_veto.is_retryable());
+        assert_eq!(
+            with_veto.to_codex_protocol_error(),
+            original.to_codex_protocol_error()
+        );
+        assert_eq!(with_veto.to_string(), original.to_string());
+        assert_eq!(
+            with_veto.http_status_code_value(),
+            original.http_status_code_value()
+        );
+    }
+}
+
+#[test]
 fn explicit_retry_veto_stops_transport_and_sampling_retries() {
     for status in [502, 503, 429, 402, 401, 403] {
         for directive in [Some("false"), Some("true"), None] {
@@ -30,11 +83,13 @@ fn explicit_retry_veto_stops_transport_and_sampling_retries() {
             let mapped = map_api_error(ApiError::Transport(transport));
             if directive == Some("false") {
                 assert!(!mapped.is_retryable());
-                assert!(
-                    mapped
-                        .to_string()
-                        .contains("upstream HTTP 402: billing rejected")
-                );
+                if matches!(mapped.details(), CodexErrorDetails::Fatal(_)) {
+                    assert!(
+                        mapped
+                            .to_string()
+                            .contains("upstream HTTP 402: billing rejected")
+                    );
+                }
             } else if status >= 500 {
                 assert!(mapped.is_retryable());
             }
