@@ -614,3 +614,70 @@ fn map_api_error_extracts_identity_auth_details_from_headers() {
     );
     assert_eq!(err.identity_error_code.as_deref(), Some("token_expired"));
 }
+
+#[test]
+fn reservation_errors_wait_at_the_turn_layer_only() {
+    let policy = codex_client::RetryOn {
+        retry_429: true,
+        retry_5xx: true,
+        retry_transport: true,
+    };
+    for (status, reason, seconds, veto, expected_delay, terminal) in [
+        (
+            502,
+            "in_flight_budget_exhausted",
+            "120",
+            false,
+            Some(120),
+            false,
+        ),
+        (
+            402,
+            "in_flight_budget_exhausted",
+            "15",
+            false,
+            Some(15),
+            false,
+        ),
+        (502, "in_flight_budget_exhausted", "301", false, None, true),
+        (502, "in_flight_budget_exhausted", "120", true, None, true),
+        (502, "unrelated", "120", false, None, false),
+        (
+            502,
+            "in_flight_budget_exhausted",
+            "invalid",
+            false,
+            None,
+            false,
+        ),
+    ] {
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            "x-bifrost-retry-reason",
+            http::HeaderValue::from_static(reason),
+        );
+        headers.insert(
+            http::header::RETRY_AFTER,
+            http::HeaderValue::from_static(seconds),
+        );
+        if veto {
+            headers.insert("x-should-retry", http::HeaderValue::from_static("false"));
+        }
+        let err = TransportError::Http {
+            status: http::StatusCode::from_u16(status).unwrap(),
+            headers: Some(headers),
+            url: None,
+            body: Some("upstream reservation".to_string()),
+        };
+        assert_eq!(
+            policy.should_retry(&err, 0, 4),
+            expected_delay.is_none() && !terminal
+        );
+        let mapped = map_api_error(ApiError::Transport(err));
+        assert_eq!(mapped.is_retryable(), !terminal);
+        assert_eq!(
+            mapped.retry_delay(),
+            expected_delay.map(std::time::Duration::from_secs)
+        );
+    }
+}

@@ -27,7 +27,11 @@ impl RetryOn {
             TransportError::Http {
                 status, headers, ..
             } => {
-                if explicitly_disables_retry(headers.as_ref()) {
+                // Let the turn retry loop own a provider reservation wait, once per
+                // attempt. Retrying here as well multiplies the request count.
+                if explicitly_disables_retry(headers.as_ref())
+                    || reservation_retry_delay(err).is_some()
+                {
                     return false;
                 }
                 (self.retry_429 && status.as_u16() == 429)
@@ -47,6 +51,30 @@ pub fn explicitly_disables_retry(headers: Option<&http::HeaderMap>) -> bool {
     headers
         .and_then(|headers| headers.get("x-should-retry"))
         .is_some_and(|value| value == "false")
+}
+
+/// A verified gateway reservation rejection applies to the next inference in this turn.
+pub fn reservation_retry_delay(err: &TransportError) -> Option<Duration> {
+    let TransportError::Http {
+        status,
+        headers: Some(headers),
+        ..
+    } = err
+    else {
+        return None;
+    };
+    if !matches!(status.as_u16(), 402 | 502)
+        || headers.get("x-bifrost-retry-reason")? != "in_flight_budget_exhausted"
+    {
+        return None;
+    }
+    let seconds = headers
+        .get(http::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .parse::<u32>()
+        .ok()?;
+    (seconds > 0).then(|| Duration::from_secs(u64::from(seconds)))
 }
 
 pub fn backoff(base: Duration, attempt: u64) -> Duration {

@@ -31,6 +31,10 @@ pub fn map_api_error(err: ApiError) -> CodexErr {
         )),
         _ => None,
     };
+    let reservation_delay = match &err {
+        ApiError::Transport(transport) => codex_client::reservation_retry_delay(transport),
+        _ => None,
+    };
     let mapped = map_api_error_without_retry_veto(err);
     // Already terminal errors carry dedicated UI/recovery semantics. Preserve
     // them; the veto only needs to stop errors that would otherwise be retried.
@@ -38,6 +42,17 @@ pub fn map_api_error(err: ApiError) -> CodexErr {
         && let Some(message) = retry_veto
     {
         CodexErr::Fatal(message)
+    } else if mapped.is_retryable()
+        && let Some(delay) = reservation_delay
+    {
+        // Do not shorten an upstream minimum. A longer hold requires a later user retry.
+        if delay > std::time::Duration::from_secs(300) {
+            return CodexErr::Fatal(format!(
+                "Provider credit reservation: retry after {} seconds. {mapped}",
+                delay.as_secs()
+            ));
+        }
+        mapped.with_retry_delay(delay)
     } else {
         mapped
     }
