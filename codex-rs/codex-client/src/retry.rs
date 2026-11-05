@@ -24,7 +24,12 @@ impl RetryOn {
             return false;
         }
         match err {
-            TransportError::Http { status, .. } => {
+            TransportError::Http {
+                status, headers, ..
+            } => {
+                if explicitly_disables_retry(headers.as_ref()) {
+                    return false;
+                }
                 (self.retry_429 && status.as_u16() == 429)
                     || (self.retry_5xx && status.is_server_error())
             }
@@ -34,6 +39,14 @@ impl RetryOn {
             _ => false,
         }
     }
+}
+
+/// An upstream veto applies to both transport retries and outer sampling retries.
+/// Other header values do not expand the caller's configured retry policy.
+pub fn explicitly_disables_retry(headers: Option<&http::HeaderMap>) -> bool {
+    headers
+        .and_then(|headers| headers.get("x-should-retry"))
+        .is_some_and(|value| value == "false")
 }
 
 pub fn backoff(base: Duration, attempt: u64) -> Duration {

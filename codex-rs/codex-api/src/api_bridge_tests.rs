@@ -5,6 +5,44 @@ use codex_protocol::protocol::RateLimitReachedType;
 use pretty_assertions::assert_eq;
 
 #[test]
+fn explicit_retry_veto_stops_transport_and_sampling_retries() {
+    for status in [502, 503, 429, 402, 401, 403] {
+        for directive in [Some("false"), Some("true"), None] {
+            let mut headers = HeaderMap::new();
+            if let Some(directive) = directive {
+                headers.insert("x-should-retry", http::HeaderValue::from_static(directive));
+            }
+            let transport = TransportError::Http {
+                status: http::StatusCode::from_u16(status).unwrap(),
+                url: None,
+                headers: Some(headers),
+                body: Some("upstream HTTP 402: billing rejected".to_string()),
+            };
+            let policy = codex_client::RetryOn {
+                retry_429: true,
+                retry_5xx: true,
+                retry_transport: true,
+            };
+            assert_eq!(
+                policy.should_retry(&transport, 0, 3),
+                directive != Some("false") && (status >= 500 || status == 429)
+            );
+            let mapped = map_api_error(ApiError::Transport(transport));
+            if directive == Some("false") {
+                assert!(!mapped.is_retryable());
+                assert!(
+                    mapped
+                        .to_string()
+                        .contains("upstream HTTP 402: billing rejected")
+                );
+            } else if status >= 500 {
+                assert!(mapped.is_retryable());
+            }
+        }
+    }
+}
+
+#[test]
 fn map_api_error_maps_server_overloaded() {
     let err = map_api_error(ApiError::ServerOverloaded);
     assert!(matches!(err.details(), CodexErrorDetails::ServerOverloaded));

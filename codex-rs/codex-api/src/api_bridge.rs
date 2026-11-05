@@ -72,6 +72,12 @@ pub fn map_api_error(err: ApiError) -> CodexErr {
             } => {
                 let body_text = body.unwrap_or_default();
 
+                if codex_client::explicitly_disables_retry(headers.as_ref()) {
+                    return CodexErr::Fatal(format!(
+                        "Upstream request failed (HTTP {status}); automatic retry disabled: {body_text}"
+                    ));
+                }
+
                 if status == http::StatusCode::SERVICE_UNAVAILABLE
                     && let Ok(value) = serde_json::from_str::<serde_json::Value>(&body_text)
                     && matches!(

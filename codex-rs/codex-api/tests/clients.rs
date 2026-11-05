@@ -478,6 +478,60 @@ async fn streaming_client_retries_on_transport_error() -> Result<()> {
 }
 
 #[tokio::test]
+async fn streaming_client_honors_gateway_retry_veto() -> Result<()> {
+    #[derive(Clone)]
+    struct RejectedTransport {
+        state: RecordingState,
+        headers: HeaderMap,
+    }
+
+    impl HttpTransport for RejectedTransport {
+        async fn execute(&self, _req: Request) -> Result<Response, TransportError> {
+            Err(TransportError::Build("execute should not run".to_string()))
+        }
+
+        async fn stream(&self, req: Request) -> Result<StreamResponse, TransportError> {
+            self.state.record(req);
+            Err(TransportError::Http {
+                status: StatusCode::BAD_GATEWAY,
+                url: None,
+                headers: Some(self.headers.clone()),
+                body: Some("upstream HTTP 402: billing rejected".to_string()),
+            })
+        }
+    }
+
+    for (headers, expected_calls) in [
+        (
+            HeaderMap::from_iter([("x-should-retry".parse()?, HeaderValue::from_static("false"))]),
+            1,
+        ),
+        (HeaderMap::new(), 4),
+    ] {
+        let state = RecordingState::default();
+        let transport = RejectedTransport {
+            state: state.clone(),
+            headers,
+        };
+        let mut provider = provider("gateway");
+        provider.retry.max_attempts = 3;
+        provider.retry.retry_5xx = true;
+        let client = ResponsesClient::new(transport, provider, Arc::new(NoAuth));
+        let result = client
+            .stream(
+                serde_json::json!({"model": "test"}),
+                HeaderMap::new(),
+                Compression::None,
+                /*turn_state*/ None,
+            )
+            .await;
+        assert!(result.is_err());
+        assert_eq!(state.take_stream_requests().len(), expected_calls);
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn streaming_client_retries_on_transient_auth_error() -> Result<()> {
     let state = RecordingState::default();
     let transport = RecordingTransport::new(state.clone());
