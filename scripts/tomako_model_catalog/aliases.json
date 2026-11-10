@@ -12,7 +12,9 @@
   "tomako/gpt-6-luna": "gpt-6-luna",
   "openrouter/openai/gpt-6-luna": "gpt-6-luna",
   "tomako/gpt-5.6-sol": "gpt-5.6-sol",
+  "openrouter/openai/gpt-5.6-sol": "gpt-5.6-sol",
   "tomako/gpt-5.6-luna": "gpt-5.6-luna",
+  "openrouter/openai/gpt-5.6-luna": "gpt-5.6-luna",
   "tomako/deepseek-v4-flash-vision-exp": "tomako/deepseek-v4-flash-vision-exp",
   "tomako/kimi-k3": "k3"
 }
